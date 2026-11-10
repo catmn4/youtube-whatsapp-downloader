@@ -1,0 +1,55 @@
+services:
+    api:
+        build:
+            context: .
+            dockerfile: Dockerfile
+        restart: unless-stopped
+        # Publish the same port the app listens on inside the container, so
+        # changing PORT in .env can never silently break the mapping.
+        ports:
+            - "${PORT:-3000}:${PORT:-3000}"
+        env_file:
+            - .env
+        environment:
+            # Taken from .env when set; the fallback is the bundled redis
+            # service name (only resolvable when the redis profile is active).
+            - REDIS_ENABLED=${REDIS_ENABLED:-false}
+            - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+        volumes:
+            - ./sessions:/app/sessions
+            - ./media:/app/media
+            - ./logs:/app/logs
+            - ./data:/app/data
+        # Allows reaching a Redis that already runs on the VPS host itself
+        # (REDIS_URL=redis://host.docker.internal:6379).
+        extra_hosts:
+            - "host.docker.internal:host-gateway"
+        depends_on:
+            redis:
+                condition: service_healthy
+                required: false
+
+    # Optional bundled Redis.
+    #
+    #   docker compose --profile redis up -d     # use the bundled Redis
+    #   docker compose up -d                     # no bundled Redis
+    #
+    # Without the profile the API uses whatever REDIS_URL points at, or
+    # file-based storage when REDIS_ENABLED=false. No host port is published,
+    # so it never collides with a Redis already running on the VPS and stays
+    # reachable only from the compose network.
+    redis:
+        image: redis:7-alpine
+        restart: unless-stopped
+        profiles: ["redis"]
+        volumes:
+            - redis-data:/data
+        healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+        command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+
+volumes:
+    redis-data:
