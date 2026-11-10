@@ -1,5 +1,7 @@
 import { expect, test } from "bun:test";
 import {
+  getYoutubeCommandAccessProblem,
+  isSamePrivatePhoneJid,
   isYoutubeSenderAllowed,
   isYoutubeUrl,
   parseYoutubeCommand,
@@ -84,4 +86,29 @@ test("only allowlisted private phone JIDs pass sender authorization", () => {
   expect(isYoutubeSenderAllowed("15551234567@g.us", "15551234567")).toBe(false);
   expect(isYoutubeSenderAllowed("15551234567@newsletter", "15551234567")).toBe(false);
   expect(isYoutubeSenderAllowed("status@broadcast", "15551234567")).toBe(false);
+});
+
+test("reports missing downloader configuration rather than silently authorizing", () => {
+  expect(
+    getYoutubeCommandAccessProblem(undefined, "15551234567", "15551234567@s.whatsapp.net"),
+  ).toBe("disabled");
+  expect(getYoutubeCommandAccessProblem("true", "", "15551234567@s.whatsapp.net")).toBe(
+    "allowlist-empty",
+  );
+  expect(
+    getYoutubeCommandAccessProblem(" TRUE ", "15551234567", "15551234568@s.whatsapp.net"),
+  ).toBe("sender-not-allowed");
+  expect(getYoutubeCommandAccessProblem("true", "15551234567", "15551234567@s.whatsapp.net")).toBe(
+    null,
+  );
+});
+
+test("matches self-chat only when both JIDs are the same private phone number", () => {
+  expect(isSamePrivatePhoneJid("15551234567@s.whatsapp.net", "15551234567:4@s.whatsapp.net")).toBe(
+    true,
+  );
+  expect(isSamePrivatePhoneJid("15551234567@g.us", "15551234567@s.whatsapp.net")).toBe(false);
+  expect(isSamePrivatePhoneJid("15551234567@s.whatsapp.net", "15551234568@s.whatsapp.net")).toBe(
+    false,
+  );
 });

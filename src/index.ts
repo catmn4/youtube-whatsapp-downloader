@@ -1,3 +1,4 @@
+import "dotenv/config";
 import app from "@/app";
 import { assertAuthStateBackendConsistency } from "@/baileys/authState";
 import { cleanupOrphanSessionFiles } from "@/baileys/authState/file";

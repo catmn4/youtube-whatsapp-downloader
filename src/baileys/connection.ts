@@ -58,8 +58,9 @@ import { webhookCircuitBreaker, webhookQueue, webhookRateLimiter } from "@/servi
 import {
   downloadYoutubeSelection,
   extractYoutubeMessageText,
+  getYoutubeCommandAccessProblem,
   getYoutubeFormatMenu,
-  isYoutubeSenderAllowed,
+  isSamePrivatePhoneJid,
   parseYoutubeCommand,
   removeYoutubeDownload,
   renderYoutubeFormatMenu,
@@ -739,21 +740,23 @@ export class BaileysConnection {
   }
 
   private async handleYoutubeCommands(data: BaileysEventMap["messages.upsert"]): Promise<boolean> {
-    if (process.env.YOUTUBE_WA_ENABLED !== "true" || data.type !== "notify") return false;
+    if (data.type !== "notify") return false;
     let handled = false;
     const allowedSenders = process.env.YOUTUBE_WA_ALLOWED_SENDERS ?? "";
 
     for (const message of data.messages) {
-      if (message.key.fromMe || !message.key.remoteJid) continue;
+      if (!message.key.remoteJid) continue;
       const remoteJid = message.key.remoteJid;
+      const ownJid = this.user?.id ?? "";
+      const isSelfChat = message.key.fromMe && isSamePrivatePhoneJid(remoteJid, ownJid);
+      if (message.key.fromMe && !isSelfChat) continue;
       const command = parseYoutubeCommand(extractYoutubeMessageText(message));
       if (command.kind === "not-command") continue;
       handled = true;
 
       // Accept direct phone chats only; never run commands from a group or broadcast.
       if (!remoteJid.endsWith("@s.whatsapp.net")) continue;
-      const senderJid = message.key.participant ?? remoteJid;
-      if (!isYoutubeSenderAllowed(senderJid, allowedSenders)) continue;
+      const senderJid = isSelfChat ? ownJid : (message.key.participant ?? remoteJid);
       const selectionKey = `${this.sessionId}:${remoteJid}`;
       const reply = async (text: string) => {
         await this.sendMessage(remoteJid, { text }, { quoted: message }).catch((error) => {
@@ -769,6 +772,30 @@ export class BaileysConnection {
       const seenKey = messageId ? `${this.sessionId}:${messageId}` : "";
       if (seenKey && seenYoutubeCommands.has(seenKey)) continue;
       if (seenKey) seenYoutubeCommands.set(seenKey, true);
+
+      const accessProblem = getYoutubeCommandAccessProblem(
+        process.env.YOUTUBE_WA_ENABLED,
+        allowedSenders,
+        senderJid,
+      );
+      if (accessProblem === "disabled") {
+        await reply(
+          "أوامر YouTube غير مفعّلة. أضف YOUTUBE_WA_ENABLED=true إلى ملف .env ثم أعد تشغيل الخدمة.",
+        );
+        continue;
+      }
+      if (accessProblem === "allowlist-empty") {
+        await reply(
+          "قائمة المرسلين المصرّح لهم فارغة. أضف رقم المرسل بالصيغة الدولية، أرقام فقط، إلى YOUTUBE_WA_ALLOWED_SENDERS في .env ثم أعد تشغيل الخدمة.",
+        );
+        continue;
+      }
+      if (accessProblem === "sender-not-allowed") {
+        await reply(
+          "هذا الرقم غير مصرح له بأوامر YouTube. أضف رقم المرسل بالصيغة الدولية إلى YOUTUBE_WA_ALLOWED_SENDERS في .env إذا كنت تدير هذا الخادم.",
+        );
+        continue;
+      }
 
       if (command.kind === "help") {
         await reply(

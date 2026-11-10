@@ -139,6 +139,30 @@ export function isYoutubeSenderAllowed(senderJid: string, allowlist: string): bo
   return allowedNumbers.includes(senderNumber);
 }
 
+export type YoutubeCommandAccessProblem = "disabled" | "allowlist-empty" | "sender-not-allowed";
+
+export function getYoutubeCommandAccessProblem(
+  enabledValue: string | undefined,
+  allowlist: string,
+  senderJid: string,
+): YoutubeCommandAccessProblem | null {
+  if (enabledValue?.trim().toLowerCase() !== "true") return "disabled";
+  const hasAllowedNumber = allowlist
+    .split(",")
+    .some((value) => value.trim().replace(/\D/g, "").length > 0);
+  if (!hasAllowedNumber) return "allowlist-empty";
+  return isYoutubeSenderAllowed(senderJid, allowlist) ? null : "sender-not-allowed";
+}
+
+export function isSamePrivatePhoneJid(firstJid: string, secondJid: string): boolean {
+  const toPhoneNumber = (jid: string): string => {
+    if (!jid.endsWith("@s.whatsapp.net")) return "";
+    return (jid.split("@")[0]?.split(":")[0] ?? "").replace(/\D/g, "");
+  };
+  const firstNumber = toPhoneNumber(firstJid);
+  return Boolean(firstNumber && firstNumber === toPhoneNumber(secondJid));
+}
+
 function configuredPositiveInteger(name: string, fallback: number): number {
   const value = Number(process.env[name]);
   return Number.isInteger(value) && value > 0 ? value : fallback;
